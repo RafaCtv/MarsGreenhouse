@@ -1,0 +1,136 @@
+#include <Wire.h>
+//Definindo id deste arduino
+const int slave_id = 0x1;
+
+//Códigos de cada tipo de leitura
+const char code_temperature = 't';
+const char code_luminosity = 'l';
+
+//Variáveis referentes aos dados lidos
+int temperature;
+int luminosity;
+
+//Variáveis referentes pinos
+const int LED = 2;
+const int LDR = A0;
+const int LIGHT = 3;
+const int LED_WARM = 6; //led que sinaliza que o sistema de aquecimento está ligado
+const int LED_COOL = 5; //led que sinaliza que o sistema de resfriamento está ligado
+
+const int sensorTemp = A1;
+const int warm = 7; //aciona o relé que liga o aquecimento
+const int cool = 8; //aciona o relé que liga a refrigeração
+
+//Controle das execuções
+bool stand_by = true;
+
+void setup() {
+  //iniciando ponte de conexão do slave com seu id
+  Wire.begin(slave_id);
+  Serial.begin(9600);
+  //Passando a função que vai ser executada quando receber algum dado
+  Wire.onReceive(receive);
+  //Passando a função que vai ser executada quando receber uma req dos
+  //seus dados
+  Wire.onRequest(requestEvent);
+
+  pinMode(warm, OUTPUT); // envia sinal para acionar o Relé aquece
+  pinMode(cool, OUTPUT); // envia sinal para acionar o relé resfria
+  pinMode(sensorTemp, INPUT);
+  pinMode(LIGHT, OUTPUT);
+  pinMode(LED, OUTPUT);
+  pinMode(LED_WARM, OUTPUT);
+  pinMode(LED_COOL, OUTPUT);
+
+  //Iniciando suas variáveis
+  temperature = 0;
+  luminosity = 0;
+}
+
+void loop(){
+  //Recebe do master se é para executar as leituras ou não
+  if(stand_by) return;
+
+   //Função responsável por fazer a leitura da luz
+  read_luminosity();
+  
+  //Função responsável para fazer a leitura da temperatura
+  read_temperature();
+
+  delay(2900);
+}
+
+//Recebe do master se o arduino vai fazer as leituras ou não
+void receive(int bytes){
+  if(Wire.available()) {
+	bool status = Wire.read();
+	stand_by = status;
+	digitalWrite(LED, !status);
+  }
+}
+
+//Quando receber uma req de seus dados essa função irá executar
+void requestEvent() {
+  //Enviar o código referente a temperatura
+  Wire.write(code_temperature);
+  //Enviar o dado da temperatura
+  Wire.write(temperature);
+  //Enviar o código referente a luminosidade
+  Wire.write(code_luminosity);
+  //Enviar o dado da luminosidade
+  Wire.write(luminosity);
+ 
+}
+
+void read_temperature(){
+  // recebe o valor lido pelo sensor
+  int read_temp = analogRead(sensorTemp);
+  Serial.println(read_temp);
+ 
+  //convertendo o valor para °C
+  temperature = map(((read_temp-20)*3.04),0,1023,-40,125);
+  Serial.print(code_temperature);
+  Serial.println(temperature);
+  //Para dar segurança
+	delay(100);
+  // temperatura abaixo do esperado
+  if (temperature<20) { //20º é a limite mais baixo de temperatura aceitável
+	digitalWrite(warm, HIGH);
+	digitalWrite(LED_WARM, HIGH);
+    digitalWrite(cool, LOW);
+    digitalWrite(LED_COOL, LOW);
+  }
+  // temperatura acima do esperado
+  if (temperature>40) { // 40º é o limite mais alto de temperatura aceitável
+	digitalWrite(warm, LOW);
+	digitalWrite(LED_WARM, LOW);
+    digitalWrite(cool, HIGH);
+    digitalWrite(LED_COOL, HIGH);
+  }
+  // temperatura dentro do esperado
+  if (temperature>=28 && temperature<=32){ // de 28º a 32º é a faixa ideal de temperatura
+    digitalWrite(warm, LOW);
+	digitalWrite(LED_WARM, LOW);
+    digitalWrite(cool, LOW);
+	digitalWrite(LED_COOL, LOW);
+  }
+ 
+  delay(900); // espera por 1 segundo para nova certificação;
+ }
+
+//Fazer a leitura
+void read_luminosity(){
+  //pegar o valor do LDR
+  luminosity = analogRead(LDR);
+  Serial.print(code_luminosity);
+  Serial.println(luminosity);
+  delay(100);
+  //Transformar entre 0 e 255
+  int intense = (luminosity*255)/100;
+  //Colocar essa força na luz
+  if(temperature > 55){
+      analogWrite(LIGHT, 40);
+  } else {
+      analogWrite(LIGHT, intense);
+  }
+}
